@@ -160,6 +160,57 @@ class AbstractSlide:
         return thumb
 
 
+class _OpenSlideMap(Mapping):
+    def __init__(self, osr):
+        self._osr = osr
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} {dict(self)!r}>'
+
+    def __len__(self):
+        return len(self._keys())
+
+    def __iter__(self):
+        return iter(self._keys())
+
+    def _keys(self):
+        # Private method; always returns list.
+        raise NotImplementedError()
+
+
+class _PropertyMap(_OpenSlideMap):
+    def _keys(self):
+        return lowlevel.get_property_names(self._osr)
+
+    def __getitem__(self, key):
+        v = lowlevel.get_property_value(self._osr, key)
+        if v is None:
+            raise KeyError()
+        return v
+
+
+class _AssociatedImageMap(_OpenSlideMap):
+    def __init__(self, osr, profile):
+        _OpenSlideMap.__init__(self, osr)
+        self._profile = profile
+
+    def _keys(self):
+        return lowlevel.get_associated_image_names(self._osr)
+
+    def __getitem__(self, key):
+        if key not in self._keys():
+            raise KeyError()
+        image = lowlevel.read_associated_image(self._osr, key)
+        if lowlevel.read_associated_image_icc_profile.available:
+            profile = lowlevel.read_associated_image_icc_profile(self._osr, key)
+            if profile == self._profile:
+                # reuse profile copy from main image to save memory
+                profile = self._profile
+            if profile is not None:
+                image.info['icc_profile'] = profile
+        return image
+    
+
 class OpenSlide(AbstractSlide):
     """An open whole-slide image.
 
@@ -266,58 +317,6 @@ class OpenSlide(AbstractSlide):
         except AttributeError:
             raise TypeError('Not a cache object')
         lowlevel.set_cache(self._osr, llcache)
-
-
-class _OpenSlideMap(Mapping):
-    def __init__(self, osr):
-        self._osr = osr
-
-    def __repr__(self):
-        return f'<{self.__class__.__name__} {dict(self)!r}>'
-
-    def __len__(self):
-        return len(self._keys())
-
-    def __iter__(self):
-        return iter(self._keys())
-
-    def _keys(self):
-        # Private method; always returns list.
-        raise NotImplementedError()
-
-
-class _PropertyMap(_OpenSlideMap):
-    def _keys(self):
-        return lowlevel.get_property_names(self._osr)
-
-    def __getitem__(self, key):
-        v = lowlevel.get_property_value(self._osr, key)
-        if v is None:
-            raise KeyError()
-        return v
-
-
-class _AssociatedImageMap(_OpenSlideMap):
-    def __init__(self, osr, profile):
-        _OpenSlideMap.__init__(self, osr)
-        self._profile = profile
-
-    def _keys(self):
-        return lowlevel.get_associated_image_names(self._osr)
-
-    def __getitem__(self, key):
-        if key not in self._keys():
-            raise KeyError()
-        image = lowlevel.read_associated_image(self._osr, key)
-        if lowlevel.read_associated_image_icc_profile.available:
-            profile = lowlevel.read_associated_image_icc_profile(self._osr, key)
-            if profile == self._profile:
-                # reuse profile copy from main image to save memory
-                profile = self._profile
-            if profile is not None:
-                image.info['icc_profile'] = profile
-        return image
-
 
 class OpenSlideCache:
     """An in-memory tile cache.
